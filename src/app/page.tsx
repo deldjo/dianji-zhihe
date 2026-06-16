@@ -1,94 +1,107 @@
 'use client';
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { dynasties, figures, searchSuggestions } from '@/lib/mock-data';
 import Footer from '@/components/Footer';
-import type { UnifiedResult } from './api/unified/route';
+
+// CBDB API 返回的数据类型
+interface CBDBPerson {
+  c_personid: string;
+  c_name: string;
+  c_name_chn?: string;
+  c_dynasty_chn?: string;
+  c_birthyear?: string;
+  c_deathyear?: string;
+  c_notes?: string;
+}
+
+interface UnifiedResult {
+  id: string;
+  name: string;
+  source: 'cbdb' | 'mock' | 'shlib' | 'shlib-person';
+  type: 'person' | 'ancient_book';
+  dynasty?: string;
+  birthYear?: string;
+  deathYear?: string;
+  aliases: string[];
+  works?: string;
+  bio?: string;
+  author?: string;
+  edition?: string;
+  category?: string;
+  abstract?: string;
+  sources: string[];
+}
 
 // Canvas particle network background
 function NetworkBackground() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
+  const canvasRef = useRef(null);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     let animationId: number;
-    let particles: { x: number; y: number; vx: number; vy: number; r: number; opacity: number }[] = [];
-
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
+    let particles: { x: number; y: number; vx: number; vy: number; r: number; opacity: number; twinkle: number; twinkleSpeed: number; hue: number }[] = [];
+    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
     resize();
     window.addEventListener('resize', resize);
-
-    const count = Math.min(80, Math.floor((canvas.width * canvas.height) / 15000));
+    const count = Math.min(140, Math.floor((canvas.width * canvas.height) / 11000));
+    const palette: { rgb: string }[] = [
+      { rgb: '6, 182, 212' }, { rgb: '6, 182, 212' }, { rgb: '6, 182, 212' },
+      { rgb: '217, 119, 6' }, { rgb: '139, 92, 246' }, { rgb: '236, 72, 153' },
+    ];
     for (let i = 0; i < count; i++) {
       particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4,
-        r: Math.random() * 2 + 1,
-        opacity: Math.random() * 0.5 + 0.2,
+        x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.35, vy: (Math.random() - 0.5) * 0.35,
+        r: Math.random() * 2.5 + 1.8, opacity: Math.random() * 0.45 + 0.55,
+        twinkle: Math.random() * Math.PI * 2, twinkleSpeed: 0.015 + Math.random() * 0.025,
+        hue: Math.floor(Math.random() * palette.length),
       });
     }
-
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       for (const p of particles) {
-        p.x += p.vx;
-        p.y += p.vy;
+        p.x += p.vx; p.y += p.vy;
         if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
         if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(6, 182, 212, ${p.opacity})`;
-        ctx.fill();
+        p.twinkle += p.twinkleSpeed;
+        const flicker = 0.7 + Math.sin(p.twinkle) * 0.3;
+        const opacity = p.opacity * flicker;
+        const rgb = palette[p.hue].rgb;
+        const glowRadius = p.r * 4;
+        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowRadius);
+        grad.addColorStop(0, `rgba(${rgb}, ${opacity * 0.55})`);
+        grad.addColorStop(0.4, `rgba(${rgb}, ${opacity * 0.15})`);
+        grad.addColorStop(1, `rgba(${rgb}, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(p.x, p.y, glowRadius, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${rgb}, ${Math.min(1, opacity * 1.2)})`; ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.8})`; ctx.fill();
       }
-
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
+          const dx = particles[i].x - particles[j].x, dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 150) {
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
+          if (dist < 170) {
+            ctx.beginPath(); ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
-            const alpha = (1 - dist / 150) * 0.15;
-            ctx.strokeStyle = `rgba(6, 182, 212, ${alpha})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
+            ctx.strokeStyle = `rgba(6, 182, 212, ${(1 - dist / 170) * 0.28})`;
+            ctx.lineWidth = 0.8; ctx.stroke();
           }
         }
       }
-
       animationId = requestAnimationFrame(draw);
     };
     draw();
-
-    return () => {
-      cancelAnimationFrame(animationId);
-      window.removeEventListener('resize', resize);
-    };
+    return () => { cancelAnimationFrame(animationId); window.removeEventListener('resize', resize); };
   }, []);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 pointer-events-none"
-      style={{ zIndex: 0 }}
-    />
-  );
+  return <canvas ref={canvasRef} className="fixed inset-0 w-full h-full pointer-events-none z-0" />;
 }
 
 export default function HomePage() {
@@ -97,94 +110,51 @@ export default function HomePage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedDynasty, setSelectedDynasty] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  // CBDB 真实搜索结果
   const [apiSearchResults, setApiSearchResults] = useState<UnifiedResult[]>([]);
-  const searchRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const searchRef = useRef(null);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
-  // 调用统一检索 API（防抖 400ms），优先前端直调 CBDB
+  // CBDB 前端直调（绕过服务端无法访问外网）
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setApiSearchResults([]);
-      return;
-    }
+    if (!searchQuery.trim()) { setApiSearchResults([]); return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        // 1. 先从 mock 数据兜底搜索
-        const mockResults = filteredSuggestions
-          .filter((s) => s.name.includes(searchQuery))
-          .map((s) => ({
-            id: s.id,
-            name: s.name,
-            source: 'mock' as const,
-            type: 'person' as const,
-            dynasty: s.dynasty,
-            birthYear: undefined,
-            deathYear: undefined,
-            aliases: [s.identity],
-            works: undefined,
-            bio: undefined,
-            author: undefined,
-            edition: undefined,
-            category: undefined,
-            abstract: undefined,
-            sources: ['示例'],
-          }));
-
-        // 2. 前端直调 CBDB API（绕过服务端无法访问外网的问题）
-        try {
-          const cbdbUrl = `https://cbdb.fas.harvard.edu/cbdbapi/person.php?name=${encodeURIComponent(searchQuery)}&output=json`;
-          const res = await fetch(cbdbUrl, {
-            headers: { 'User-Agent': 'Ancient-Wisdom-App/1.0' },
-            signal: AbortSignal.timeout(5000),
-          });
-          if (res.ok) {
-            const text = await res.text();
-            if (text && text !== 'null' && text !== '[]') {
-              const cbdbData = JSON.parse(text);
-              if (Array.isArray(cbdbData) && cbdbData.length > 0) {
-                const cbdbResults = cbdbData.slice(0, 5).map((p: Record<string, unknown>) => ({
-                  id: `cbdb-${p.c_personid}`,
-                  name: String(p.c_name_chn || p.c_name || searchQuery),
-                  source: 'cbdb' as const,
-                  type: 'person' as const,
-                  dynasty: p.c_dynasty_chn ? String(p.c_dynasty_chn) : undefined,
-                  birthYear: p.c_birthyear ? String(p.c_birthyear) : undefined,
-                  deathYear: p.c_deathyear ? String(p.c_deathyear) : undefined,
-                  bio: p.c_notes ? String(p.c_notes).substring(0, 200) : undefined,
-                  aliases: [],
-                  works: undefined,
-                  sources: ['CBDB哈佛'],
-                } satisfies UnifiedResult));
-                // 合并：CBDB 真实结果 + mock 兜底（去掉已有）
-                const existingNames = new Set(cbdbResults.map((r) => r.name));
-                const otherMock = mockResults.filter((r) => !existingNames.has(r.name));
-                setApiSearchResults([...cbdbResults, ...otherMock].slice(0, 8));
-                return;
-              }
-            }
-          }
-        } catch {
-          // CBDB 失败，继续用 mock
-        }
-
-        setApiSearchResults(mockResults.slice(0, 8));
-      } catch {
-        // 静默失败
-      }
-    }, 400);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
+        const cbdbUrl = `https://cbdb.fas.harvard.edu/cbdbapi/person.php?name=${encodeURIComponent(searchQuery)}&output=json`;
+        const res = await fetch(cbdbUrl, {
+          headers: { 'User-Agent': 'Ancient-Wisdom-App/1.0' },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) { setApiSearchResults([]); return; }
+        const text = await res.text();
+        if (!text || text === 'null' || text === '[]') { setApiSearchResults([]); return; }
+        const cbdbData: CBDBPerson[] = JSON.parse(text);
+        if (!Array.isArray(cbdbData) || cbdbData.length === 0) { setApiSearchResults([]); return; }
+        const cbdbResults: UnifiedResult[] = cbdbData.slice(0, 6).map((p) => ({
+          id: `cbdb-${p.c_personid}`,
+          name: String(p.c_name_chn || p.c_name || searchQuery),
+          source: 'cbdb',
+          type: 'person',
+          dynasty: p.c_dynasty_chn ? String(p.c_dynasty_chn) : undefined,
+          birthYear: p.c_birthyear ? String(p.c_birthyear) : undefined,
+          deathYear: p.c_deathyear ? String(p.c_deathyear) : undefined,
+          aliases: [],
+          works: undefined,
+          bio: p.c_notes ? String(p.c_notes).substring(0, 100) : undefined,
+          sources: ['CBDB哈佛'],
+        }));
+        setApiSearchResults(cbdbResults);
+      } catch { setApiSearchResults([]); }
+    }, 450);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [searchQuery]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+      if (searchRef.current && !(searchRef.current as HTMLElement).contains(e.target as Node)) {
         setShowSuggestions(false);
       }
     }
@@ -194,287 +164,220 @@ export default function HomePage() {
 
   const filteredSuggestions = searchSuggestions.filter((s) => {
     const matchesQuery = s.name.includes(searchQuery) || s.identity.includes(searchQuery);
-    const matchesDynasty = !selectedDynasty || s.dynasty.includes(selectedDynasty === 'tang' ? '唐' : selectedDynasty === 'song' ? '宋' : selectedDynasty === 'yuan' ? '元' : selectedDynasty === 'ming' ? '明' : '清');
+    const matchesDynasty = !selectedDynasty || s.dynasty.includes(
+      selectedDynasty === 'tang' ? '唐' : selectedDynasty === 'song' ? '宋' :
+      selectedDynasty === 'yuan' ? '元' : selectedDynasty === 'ming' ? '明' : '清'
+    );
     return matchesQuery && matchesDynasty;
   });
 
   const filteredFigures = figures.filter((f) => {
-    const matchesDynasty = !selectedDynasty || f.dynasty.includes(selectedDynasty === 'tang' ? '唐' : selectedDynasty === 'song' ? '宋' : selectedDynasty === 'yuan' ? '元' : selectedDynasty === 'ming' ? '明' : '清');
+    const matchesDynasty = !selectedDynasty || f.dynasty.includes(
+      selectedDynasty === 'tang' ? '唐' : selectedDynasty === 'song' ? '宋' :
+      selectedDynasty === 'yuan' ? '元' : selectedDynasty === 'ming' ? '明' : '清'
+    );
     return matchesDynasty;
   });
 
-  const dynastyNameMap: Record<string, string> = {
-    tang: '唐',
-    song: '宋',
-    yuan: '元',
-    ming: '明',
-    qing: '清',
-  };
+  const dynastyNameMap: Record<string, string> = { tang: '唐', song: '宋', yuan: '元', ming: '明', qing: '清' };
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden noise-overlay flex flex-col">
+    <div className="min-h-screen bg-bg-primary text-text-primary relative">
       <NetworkBackground />
-
       {/* Top nav bar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-bg-dark/60 backdrop-blur-xl border-b border-border-subtle/50">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="flex items-center gap-3 group">
-              <Image
-                src="/logo.png"
-                alt="典籍智核"
-                width={36}
-                height={36}
-                className="rounded-md"
-                priority
-              />
-              <div className="flex items-baseline gap-2">
-                <span className="font-serif text-lg font-bold text-text-primary group-hover:text-cyan-tech transition-colors">典籍智核</span>
-                <span className="font-serif text-sm text-text-muted">文脉探微</span>
-              </div>
-            </Link>
+      <nav className="relative z-10 w-full px-8 py-5 flex items-center justify-between border-b border-border-subtle/40 bg-bg-primary/80 backdrop-blur-md">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-tech/30 to-amber/20 border border-cyan-tech/40 flex items-center justify-center">
+            <span className="text-amber font-serif font-bold text-lg">典</span>
           </div>
-          <div className="flex items-center gap-6">
-            <Link href="/figure/su-shi" className="text-sm text-text-secondary hover:text-cyan-tech transition-colors">
-              人物画像
-            </Link>
-            <Link href="/qa" className="text-sm text-text-secondary hover:text-cyan-tech transition-colors">
-              智能问答
-            </Link>
+          <span className="text-text-primary font-serif text-xl font-bold tracking-wide">典籍智核</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted text-sm">文脉探微</span>
+          <div className="flex items-center gap-1 ml-4 px-4 py-2 rounded-lg bg-bg-card/50 border border-border-subtle/50 text-sm text-text-secondary hover:text-text-primary hover:border-cyan-tech/40 transition-colors cursor-pointer">
+            人物画像
+          </div>
+          <div className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm text-text-muted hover:text-text-primary transition-colors cursor-pointer">
+            智能问答
           </div>
         </div>
       </nav>
 
       {/* Main content */}
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 pt-16 pb-8">
+      <main className="relative z-10 px-8 py-16 max-w-6xl mx-auto">
+
         {/* Hero section */}
-        <div className={`text-center mb-14 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+        <div className="text-center mb-16 pt-8">
           {/* Logo */}
-          <div className="mb-8 flex justify-center">
-            <div className="relative">
-              {/* Glow ring behind logo */}
-              <div className="absolute inset-[-12px] rounded-2xl bg-cyan-tech/5 blur-xl" />
-              <Image
-                src="/logo.png"
-                alt="典籍智核 Logo"
-                width={120}
-                height={120}
-                className="relative rounded-2xl shadow-2xl shadow-cyan-tech/10"
-                priority
-              />
+          <div className="relative inline-flex items-center justify-center mb-8">
+            <div className="absolute w-28 h-28 rounded-full bg-amber/20 animate-pulse" />
+            <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-amber/40 to-amber/10 border-2 border-amber/50 flex items-center justify-center shadow-2xl shadow-amber/20">
+              <span className="text-amber font-serif text-4xl font-bold">典</span>
             </div>
           </div>
-
-          <h1 className="font-serif text-5xl md:text-7xl font-bold mb-4 tracking-wider">
-            <span className="gradient-text">典籍智核</span>
+          <h1 className="text-5xl md:text-6xl font-serif font-bold text-text-primary mb-4">
+            典籍智核 <span className="text-amber/90">文脉探微</span>
           </h1>
-          <h2 className="font-serif text-2xl md:text-3xl font-semibold text-text-secondary/90 mb-5 tracking-[0.3em]">
-            文脉探微
-          </h2>
-          <p className="text-text-secondary text-lg max-w-xl mx-auto leading-relaxed">
+          <p className="text-xl text-text-secondary max-w-2xl mx-auto leading-relaxed">
             一个人物，一段历史，一种文明——用AI读懂数据里的人物命运
           </p>
-          <p className="text-text-muted/80 text-sm mt-2 italic font-serif">
-            Ancient Wisdom Meets Modern AI
-          </p>
+          <p className="text-cyan-tech/80 text-sm mt-2 italic">Ancient Wisdom Meets Modern AI</p>
         </div>
 
         {/* Search bar */}
-        <div className={`w-full max-w-2xl mb-16 transition-all duration-1000 delay-300 relative z-40 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-          <div ref={searchRef} className="relative">
-            <div className="relative breathing-glow rounded-xl">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowSuggestions(true);
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                placeholder="搜索历史人物，如：苏轼、李白、杜甫..."
-                className="w-full px-6 py-4 pl-14 bg-bg-card/90 backdrop-blur-sm border border-border-subtle rounded-xl text-text-primary placeholder:text-text-secondary/50 text-lg focus:outline-none focus:border-cyan-tech transition-colors"
-              />
-              <svg
-                className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-text-muted"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            </div>
-
-            {/* Suggestions dropdown */}
-            {showSuggestions && searchQuery && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-bg-card/95 backdrop-blur-md border border-border-subtle rounded-xl overflow-hidden shadow-2xl z-50">
-                {/* API 真实结果优先 */}
-                {apiSearchResults.length > 0 && (
-                  <>
-                    <div className="px-4 py-2 text-xs text-text-muted border-b border-border-subtle">
-                      🔍 真实数据（CBDB + 上图）
-                    </div>
-                    {apiSearchResults.slice(0, 6).map((r, i) => {
-                      // 用姓名作为 figure ID，CBDB 加 cbdb- 前缀，上图加 shlib-
-                      const prefix = r.source === 'cbdb' ? 'cbdb-' : r.source === 'shlib-person' ? 'shlib-' : '';
-                      const figureId = prefix + encodeURIComponent(r.name);
-                      return (
-                        <Link
-                          key={`api-${i}`}
-                          href={`/figure/${figureId}`}
-                          className="flex items-center gap-4 px-6 py-3 hover:bg-bg-card-hover transition-colors border-b border-border-subtle/30"
-                          onClick={() => { setShowSuggestions(false); setApiSearchResults([]); }}
-                        >
-                          <span className="text-cyan-tech font-serif text-lg">{r.name}</span>
-                          <span className="text-text-muted text-xs">
-                            {r.type === 'person' ? (
-                              <>
-                                {r.dynasty || ''} {r.birthYear ? `${r.birthYear}—${r.deathYear || '?'}` : ''}
-                                <span className="ml-1 text-amber/60">· {r.source === 'cbdb' ? 'CBDB哈佛' : r.source === 'shlib-person' ? '上图人物' : r.source}</span>
-                              </>
-                            ) : (
-                              <>{r.author || ''} · {r.category || ''}</>
-                            )}
-                          </span>
-                        </Link>
-                      );
-                    })}
-                  </>
-                )}
-                {/* Mock 兜底结果 */}
-                {filteredSuggestions.length > 0 && (
-                  <>
-                    <div className="px-4 py-2 text-xs text-text-muted border-b border-border-subtle">
-                      {apiSearchResults.length > 0 ? '📚 示例人物（可体验完整功能）' : '示例人物'}
-                    </div>
-                    {filteredSuggestions.slice(0, 6 - Math.min(apiSearchResults.length, 6)).map((s) => (
-                      <Link
-                        key={s.id}
-                        href={`/figure/${s.id}`}
-                        className="flex items-center gap-4 px-6 py-3 hover:bg-bg-card-hover transition-colors"
-                        onClick={() => setShowSuggestions(false)}
-                      >
-                        <span className="text-amber font-serif text-lg">{s.name}</span>
-                        <span className="text-text-muted text-sm">{s.dynasty} · {s.identity}</span>
-                      </Link>
-                    ))}
-                  </>
-                )}
-                {apiSearchResults.length === 0 && filteredSuggestions.length === 0 && (
-                  <div className="px-6 py-8 text-center text-text-muted text-sm">
-                    正在检索 CBDB + 上图数据库...
-                  </div>
-                )}
-              </div>
-            )}
+        <div className="max-w-2xl mx-auto mb-12" ref={searchRef}>
+          <div className="relative">
+            <svg className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setShowSuggestions(true); }}
+              onFocus={() => setShowSuggestions(true)}
+              placeholder="搜索历史人物，如：苏轼、李白、杜甫..."
+              className="w-full px-6 py-4 pl-14 bg-bg-card/90 backdrop-blur-sm border border-border-subtle rounded-xl text-text-primary placeholder:text-text-secondary/50 text-lg focus:outline-none focus:border-cyan-tech transition-colors"
+            />
           </div>
+
+          {/* Suggestions dropdown */}
+          {showSuggestions && searchQuery && (
+            <div className="mt-3 bg-bg-card/95 backdrop-blur-md border border-border-subtle/50 rounded-xl shadow-2xl overflow-hidden">
+              {/* CBDB 真实数据 */}
+              {apiSearchResults.length > 0 && (
+                <div>
+                  <div className="px-6 py-2 text-xs text-cyan-tech/80 font-medium border-b border-border-subtle/30">
+                    🔍 真实数据（CBDB哈佛）
+                  </div>
+                  {apiSearchResults.map((r, i) => {
+                    const figureId = `cbdb-${encodeURIComponent(r.name)}`;
+                    return (
+                      <Link
+                        key={`api-${i}`}
+                        href={`/figure/${figureId}`}
+                        className="flex items-center gap-4 px-6 py-3 hover:bg-bg-card-hover transition-colors border-b border-border-subtle/30"
+                        onClick={() => { setShowSuggestions(false); setApiSearchResults([]); }}
+                      >
+                        <span className="text-cyan-tech font-serif text-lg">{r.name}</span>
+                        <span className="text-text-muted text-xs">
+                          {r.dynasty || ''}
+                          {r.birthYear ? ` · ${r.birthYear}—${r.deathYear || '?'}` : ''}
+                          <span className="ml-1 text-amber/60">· CBDB哈佛</span>
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+              {/* Mock 兜底 */}
+              {filteredSuggestions.length > 0 && (
+                <div>
+                  {apiSearchResults.length > 0 && (
+                    <div className="px-6 py-2 text-xs text-text-muted/60 font-medium border-b border-border-subtle/30">
+                      示例人物
+                    </div>
+                  )}
+                  {filteredSuggestions.slice(0, 6).map((s) => (
+                    <Link
+                      key={s.id}
+                      href={`/figure/${encodeURIComponent(s.name)}`}
+                      className="flex items-center gap-4 px-6 py-3 hover:bg-bg-card-hover transition-colors border-b border-border-subtle/30 last:border-0"
+                      onClick={() => setShowSuggestions(false)}
+                    >
+                      <span className="text-amber/80 font-serif text-lg">{s.name}</span>
+                      <span className="text-text-muted text-xs">{s.dynasty} · {s.identity}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Dynasty filters */}
-        <div className={`flex gap-3 mb-16 transition-all duration-1000 delay-500 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+        <div className="flex flex-wrap justify-center gap-4 mb-16">
           {dynasties.map((d) => (
             <button
               key={d.id}
               onClick={() => setSelectedDynasty(selectedDynasty === d.id ? null : d.id)}
-              className={`relative px-6 py-2.5 rounded-lg font-serif text-lg transition-all duration-300 ${
+              className={`relative px-6 py-2.5 rounded-lg font-serif text-lg font-semibold transition-all duration-300 ${
                 selectedDynasty === d.id
-                  ? 'bg-amber/20 text-amber border-amber/50 border'
-                  : 'bg-bg-card/60 text-text-secondary border border-border-subtle hover:border-cyan-tech/50 hover:text-text-primary'
+                  ? 'bg-amber/25 text-amber border border-amber shadow-lg shadow-amber/20'
+                  : 'bg-bg-card/70 text-text-primary border border-border-subtle hover:border-cyan-tech/60 hover:text-cyan-tech hover:shadow-lg hover:shadow-cyan-tech/10'
               }`}
             >
               {selectedDynasty === d.id && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-amber rounded-full" />
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber rounded-full animate-pulse" />
               )}
-              {d.name}
-              <span className="text-xs ml-1 opacity-60">{d.period}</span>
+              {d.name} {d.period}
             </button>
           ))}
         </div>
 
         {/* Feature cards */}
-        <div className={`w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-6 px-4 transition-all duration-1000 delay-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-          <Link href="/figure/su-shi" className="card-hover block p-8 bg-bg-card/70 backdrop-blur-sm border border-border-subtle rounded-xl group">
-            <div className="w-14 h-14 rounded-lg bg-primary-deep/60 flex items-center justify-center mb-5 border border-cyan-tech/20">
-              <svg className="w-7 h-7 text-cyan-tech" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
+        <div className="grid md:grid-cols-3 gap-6 mb-16">
+          <div className="group p-8 rounded-2xl bg-bg-card/60 border border-border-subtle/40 hover:border-cyan-tech/50 hover:shadow-xl hover:shadow-cyan-tech/10 transition-all duration-300 hover:-translate-y-1">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-tech/30 to-purple-500/20 flex items-center justify-center mb-5 group-hover:scale-110 transition-transform">
+              <span className="text-xl">👤</span>
             </div>
-            <h3 className="font-serif text-xl font-semibold text-text-primary mb-3 group-hover:text-cyan-tech transition-colors">人物数字画像</h3>
-            <p className="text-text-secondary/80 text-sm leading-relaxed">
+            <h3 className="text-xl font-serif font-bold text-text-primary mb-3">人物数字画像</h3>
+            <p className="text-text-secondary text-sm leading-relaxed">
               Multi-Agent协作分析，生成历史人物多维画像——生平轨迹、文学风格、社会关系、时空足迹
             </p>
-            <div className="mt-4 text-cyan-tech text-xs flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              探索更多
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            <div className="mt-5 text-cyan-tech text-sm font-medium group-hover:underline cursor-pointer">探索更多 →</div>
+          </div>
+          <div className="group p-8 rounded-2xl bg-bg-card/60 border border-border-subtle/40 hover:border-amber/50 hover:shadow-xl hover:shadow-amber/10 transition-all duration-300 hover:-translate-y-1">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber/30 to-orange-500/20 flex items-center justify-center mb-5 group-hover:scale-110 transition-transform">
+              <span className="text-xl">🕸️</span>
             </div>
-          </Link>
-
-          <Link href="/figure/su-shi?tab=network" className="card-hover block p-8 bg-bg-card/70 backdrop-blur-sm border border-border-subtle rounded-xl group">
-            <div className="w-14 h-14 rounded-lg bg-amber/10 flex items-center justify-center mb-5 border border-amber/20">
-              <svg className="w-7 h-7 text-amber" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-text-primary mb-3 group-hover:text-amber transition-colors">关系网络图谱</h3>
-            <p className="text-text-secondary/80 text-sm leading-relaxed">
+            <h3 className="text-xl font-serif font-bold text-text-primary mb-3">关系网络图谱</h3>
+            <p className="text-text-secondary text-sm leading-relaxed">
               可视化人物社会关系网络，师友、亲属、政治、文学——多维关联，一目了然
             </p>
-            <div className="mt-4 text-amber text-xs flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              探索更多
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            <div className="mt-5 text-amber/80 text-sm font-medium group-hover:underline cursor-pointer">探索更多 →</div>
+          </div>
+          <div className="group p-8 rounded-2xl bg-bg-card/60 border border-border-subtle/40 hover:border-purple-500/50 hover:shadow-xl hover:shadow-purple-500/10 transition-all duration-300 hover:-translate-y-1">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/30 to-pink-500/20 flex items-center justify-center mb-5 group-hover:scale-110 transition-transform">
+              <span className="text-xl">💬</span>
             </div>
-          </Link>
-
-          <Link href="/qa" className="card-hover block p-8 bg-bg-card/70 backdrop-blur-sm border border-border-subtle rounded-xl group">
-            <div className="w-14 h-14 rounded-lg bg-cyan-tech/10 flex items-center justify-center mb-5 border border-cyan-tech/20">
-              <svg className="w-7 h-7 text-cyan-tech" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-text-primary mb-3 group-hover:text-cyan-tech transition-colors">智能问答系统</h3>
-            <p className="text-text-secondary/80 text-sm leading-relaxed">
+            <h3 className="text-xl font-serif font-bold text-text-primary mb-3">智能问答系统</h3>
+            <p className="text-text-secondary text-sm leading-relaxed">
               GraphRAG复杂推理，自然语言查询历史人物事件，多跳关联发现隐藏联系
             </p>
-            <div className="mt-4 text-cyan-tech text-xs flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              探索更多
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-            </div>
-          </Link>
+            <div className="mt-5 text-purple-400 text-sm font-medium group-hover:underline cursor-pointer">探索更多 →</div>
+          </div>
         </div>
 
         {/* Featured figures */}
         {selectedDynasty && (
-          <div className="w-full max-w-5xl mt-14 px-4">
-            <h3 className="font-serif text-xl text-text-secondary/90 mb-6 text-center">
+          <div className="mb-16">
+            <h2 className="text-2xl font-serif font-bold text-text-primary mb-6 flex items-center gap-3">
+              <span className="w-1.5 h-6 bg-amber rounded-full" />
               {dynastyNameMap[selectedDynasty]}代人物
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {filteredFigures.map((f) => (
                 <Link
                   key={f.id}
-                  href={`/figure/${f.id}`}
-                  className="card-hover p-5 bg-bg-card/60 backdrop-blur-sm border border-border-subtle rounded-lg text-center group"
+                  href={`/figure/${encodeURIComponent(f.name)}`}
+                  className="group p-5 rounded-xl bg-bg-card/50 border border-border-subtle/40 hover:border-cyan-tech/50 hover:shadow-lg hover:shadow-cyan-tech/10 transition-all"
                 >
-                  <div className="w-14 h-14 mx-auto rounded-lg bg-primary-deep/40 flex items-center justify-center mb-3 border border-border-subtle">
-                    <span className="font-serif text-xl text-amber">{f.name[0]}</span>
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber/30 to-amber/10 flex items-center justify-center text-amber font-serif font-bold text-lg group-hover:scale-110 transition-transform">
+                      {f.name[0]}
+                    </span>
+                    <span className="text-text-primary font-serif font-bold">{f.name}</span>
                   </div>
-                  <div className="font-serif text-lg text-text-primary group-hover:text-cyan-tech transition-colors">{f.name}</div>
-                  <div className="text-text-secondary/70 text-xs mt-1">{f.identity[0]}</div>
+                  <p className="text-text-muted text-xs">{f.identity}</p>
                 </Link>
               ))}
             </div>
           </div>
         )}
-      </div>
+      </main>
 
       {/* Footer */}
-      <div className="relative z-10">
-        <Footer />
-      </div>
-    </main>
+      <Footer />
+    </div>
   );
 }
