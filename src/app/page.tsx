@@ -105,7 +105,7 @@ export default function HomePage() {
     setMounted(true);
   }, []);
 
-  // 调用统一检索 API（防抖 400ms）
+  // 调用统一检索 API（防抖 400ms），优先前端直调 CBDB
   useEffect(() => {
     if (!searchQuery.trim()) {
       setApiSearchResults([]);
@@ -114,11 +114,65 @@ export default function HomePage() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/unified?q=${encodeURIComponent(searchQuery)}&limit=8`);
-        const json = await res.json();
-        if (json.success && json.data) {
-          setApiSearchResults(json.data);
+        // 1. 先从 mock 数据兜底搜索
+        const mockResults = filteredSuggestions
+          .filter((s) => s.name.includes(searchQuery))
+          .map((s) => ({
+            id: s.id,
+            name: s.name,
+            source: 'mock' as const,
+            type: 'person' as const,
+            dynasty: s.dynasty,
+            birthYear: undefined,
+            deathYear: undefined,
+            aliases: [s.identity],
+            works: undefined,
+            bio: undefined,
+            author: undefined,
+            edition: undefined,
+            category: undefined,
+            abstract: undefined,
+            sources: ['示例'],
+          }));
+
+        // 2. 前端直调 CBDB API（绕过服务端无法访问外网的问题）
+        try {
+          const cbdbUrl = `https://cbdb.fas.harvard.edu/cbdbapi/person.php?name=${encodeURIComponent(searchQuery)}&output=json`;
+          const res = await fetch(cbdbUrl, {
+            headers: { 'User-Agent': 'Ancient-Wisdom-App/1.0' },
+            signal: AbortSignal.timeout(5000),
+          });
+          if (res.ok) {
+            const text = await res.text();
+            if (text && text !== 'null' && text !== '[]') {
+              const cbdbData = JSON.parse(text);
+              if (Array.isArray(cbdbData) && cbdbData.length > 0) {
+                const cbdbResults = cbdbData.slice(0, 5).map((p: Record<string, unknown>) => ({
+                  id: `cbdb-${p.c_personid}`,
+                  name: String(p.c_name_chn || p.c_name || searchQuery),
+                  source: 'cbdb' as const,
+                  type: 'person' as const,
+                  dynasty: p.c_dynasty_chn ? String(p.c_dynasty_chn) : undefined,
+                  birthYear: p.c_birthyear ? String(p.c_birthyear) : undefined,
+                  deathYear: p.c_deathyear ? String(p.c_deathyear) : undefined,
+                  bio: p.c_notes ? String(p.c_notes).substring(0, 200) : undefined,
+                  aliases: [],
+                  works: undefined,
+                  sources: ['CBDB哈佛'],
+                } satisfies UnifiedResult));
+                // 合并：CBDB 真实结果 + mock 兜底（去掉已有）
+                const existingNames = new Set(cbdbResults.map((r) => r.name));
+                const otherMock = mockResults.filter((r) => !existingNames.has(r.name));
+                setApiSearchResults([...cbdbResults, ...otherMock].slice(0, 8));
+                return;
+              }
+            }
+          }
+        } catch {
+          // CBDB 失败，继续用 mock
         }
+
+        setApiSearchResults(mockResults.slice(0, 8));
       } catch {
         // 静默失败
       }
@@ -265,13 +319,13 @@ export default function HomePage() {
                       🔍 真实数据（CBDB + 上图）
                     </div>
                     {apiSearchResults.slice(0, 6).map((r, i) => {
-                      const figureId = r.type === 'person'
-                        ? (r.source === 'cbdb' ? `cbdb-${r.name}` : `shlib-p-${r.name}`)
-                        : null;
-                      return figureId ? (
+                      // 用姓名作为 figure ID，CBDB 加 cbdb- 前缀，上图加 shlib-
+                      const prefix = r.source === 'cbdb' ? 'cbdb-' : r.source === 'shlib-person' ? 'shlib-' : '';
+                      const figureId = prefix + encodeURIComponent(r.name);
+                      return (
                         <Link
                           key={`api-${i}`}
-                          href={`/figure/${encodeURIComponent(figureId)}`}
+                          href={`/figure/${figureId}`}
                           className="flex items-center gap-4 px-6 py-3 hover:bg-bg-card-hover transition-colors border-b border-border-subtle/30"
                           onClick={() => { setShowSuggestions(false); setApiSearchResults([]); }}
                         >
@@ -280,14 +334,14 @@ export default function HomePage() {
                             {r.type === 'person' ? (
                               <>
                                 {r.dynasty || ''} {r.birthYear ? `${r.birthYear}—${r.deathYear || '?'}` : ''}
-                                <span className="ml-1 text-amber/60">· {r.source === 'cbdb' ? 'CBDB哈佛' : '上图人物'}</span>
+                                <span className="ml-1 text-amber/60">· {r.source === 'cbdb' ? 'CBDB哈佛' : r.source === 'shlib-person' ? '上图人物' : r.source}</span>
                               </>
                             ) : (
                               <>{r.author || ''} · {r.category || ''}</>
                             )}
                           </span>
                         </Link>
-                      ) : null;
+                      );
                     })}
                   </>
                 )}

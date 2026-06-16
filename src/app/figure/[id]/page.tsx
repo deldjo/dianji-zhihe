@@ -643,27 +643,43 @@ export default function FigurePage() {
   } | null>(null);
 
   // 从 ID 解析真实姓名（支持 cbdb-王勃、shlib-p-王勃 格式）
+  // ID 由首页搜索生成：cbdb- + URL编码(姓名)
   function extractNameFromId(id: string): string {
-    if (id.startsWith('cbdb-')) return id.slice(5);
-    if (id.startsWith('shlib-p-')) return id.slice(9);
-    return '';
+    if (id.startsWith('cbdb-')) return decodeURIComponent(id.slice(5));
+    if (id.startsWith('shlib-')) return decodeURIComponent(id.slice(7));
+    if (id.startsWith('shlib-p-')) return decodeURIComponent(id.slice(9));
+    return decodeURIComponent(id);
   }
 
   // 先找到 mock figure 的姓名，用于调用三源融合 API
   const mockById = figures.find((f) => f.id === figureId);
   const figureNameForApi = mockById?.name || extractNameFromId(figureId);
 
-  // 尝试从三源融合 API 获取真实数据
+  // 尝试从 CBDB 直调获取真实数据（绕过服务端无法访问外网）
   useEffect(() => {
     if (!figureId || !figureNameForApi) return;
     const fetchData = async () => {
       try {
-        // 调用 /api/person 获取完整的三源融合数据（含 crossEraConnections）
-        const res = await fetch(`/api/person?name=${encodeURIComponent(figureNameForApi)}`);
-        const json = await res.json();
-        if (json.success && json.data) {
-          setApiData(json.data);
-        }
+        // 前端直调 CBDB API
+        const cbdbUrl = `https://cbdb.fas.harvard.edu/cbdbapi/person.php?name=${encodeURIComponent(figureNameForApi)}&output=json`;
+        const res = await fetch(cbdbUrl, {
+          headers: { 'User-Agent': 'Ancient-Wisdom-App/1.0' },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!res.ok) return;
+        const text = await res.text();
+        if (!text || text === 'null' || text === '[]') return;
+        const cbdbData = JSON.parse(text);
+        if (!Array.isArray(cbdbData) || cbdbData.length === 0) return;
+        const p = cbdbData[0];
+        setApiData({
+          name: String(p.c_name_chn || p.c_name || figureNameForApi),
+          dynasty: p.c_dynasty_chn ? String(p.c_dynasty_chn) : undefined,
+          birthYear: p.c_birthyear ? String(p.c_birthyear) : undefined,
+          deathYear: p.c_deathyear ? String(p.c_deathyear) : undefined,
+          bio: p.c_notes ? String(p.c_notes).substring(0, 300) : undefined,
+          crossEraConnections: [],
+        });
       } catch {
         // 静默失败，用 mock 数据兜底
       }
