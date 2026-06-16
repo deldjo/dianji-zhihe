@@ -16,6 +16,7 @@ import {
   type TrajectoryPoint,
   type Relation,
 } from '@/lib/mock-data';
+import CrossEraCard from '@/app/components/map/CrossEraCard';
 import Footer from '@/components/Footer';
 
 // ==================== Force-Directed Graph Component ====================
@@ -624,13 +625,67 @@ export default function FigurePage() {
   const figureId = params.id as string;
   const initialTab = searchParams.get('tab') || 'bio';
 
-  const figure = figures.find((f) => f.id === figureId) || figures[0];
-  const timeline = figureTimelines[figure.name] || [];
+  // 优先从 mock 数据查找
+  const mockFigure = figures.find((f) => f.id === figureId);
+  // 融合数据：优先真实 API 数据，fallback 到 mock
+  const [apiData, setApiData] = useState<{
+    name: string;
+    bio?: string;
+    dynasty?: string;
+    birthYear?: string;
+    deathYear?: string;
+    crossEraConnections?: Array<{
+      ancientLocation: string;
+      ancientYear?: number;
+      connection: string;
+      modernEvents: Array<{ year?: number; location: string; description: string }>;
+    }>;
+  } | null>(null);
+
+  // 从 ID 解析真实姓名（支持 cbdb-王勃、shlib-p-王勃 格式）
+  function extractNameFromId(id: string): string {
+    if (id.startsWith('cbdb-')) return id.slice(5);
+    if (id.startsWith('shlib-p-')) return id.slice(9);
+    return '';
+  }
+
+  // 先找到 mock figure 的姓名，用于调用三源融合 API
+  const mockById = figures.find((f) => f.id === figureId);
+  const figureNameForApi = mockById?.name || extractNameFromId(figureId);
+
+  // 尝试从三源融合 API 获取真实数据
+  useEffect(() => {
+    if (!figureId || !figureNameForApi) return;
+    const fetchData = async () => {
+      try {
+        // 调用 /api/person 获取完整的三源融合数据（含 crossEraConnections）
+        const res = await fetch(`/api/person?name=${encodeURIComponent(figureNameForApi)}`);
+        const json = await res.json();
+        if (json.success && json.data) {
+          setApiData(json.data);
+        }
+      } catch {
+        // 静默失败，用 mock 数据兜底
+      }
+    };
+    fetchData();
+  }, [figureId, figureNameForApi]);
+
+  const figure = mockFigure || figures[0];
+  // 如果 API 返回了真实数据，替换部分字段
+  const displayName = apiData?.name || figure.name;
+  const displayBio = apiData?.bio || figure.bio;
+  const displayDynasty = apiData?.dynasty || figure.dynasty;
+  const displayBirthYear = apiData?.birthYear ? parseInt(apiData.birthYear) : figure.birthYear;
+  const displayDeathYear = apiData?.deathYear ? parseInt(apiData.deathYear) : figure.deathYear;
+
+  const timeline = figureTimelines[figure.name] || figureTimelines['苏轼'] || [];
   const poems = figurePoems[figure.name] || [];
-  const trajectory = allTrajectories[figure.name] || [];
+  const trajectory = allTrajectories[figure.name] || allTrajectories['苏轼'] || [];
   const figureRelations = relationships.filter(
-    (r) => r.source === figure.name || r.target === figure.name
+    (r) => r.source === displayName || r.target === displayName
   );
+  const crossEraConnections = apiData?.crossEraConnections || [];
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [mounted, setMounted] = useState(false);
@@ -643,6 +698,7 @@ export default function FigurePage() {
     { id: 'bio', label: '生平分析', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
     { id: 'network', label: '关系网络', icon: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' },
     { id: 'trajectory', label: '时空轨迹', icon: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' },
+    { id: 'crossera', label: '🌏跨时代', icon: 'M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z', requiresData: true },
     { id: 'poetry', label: '诗词鉴赏', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
   ];
 
@@ -671,7 +727,7 @@ export default function FigurePage() {
             <span className="font-serif text-lg font-bold text-text-primary group-hover:text-cyan-tech transition-colors">典籍智核</span>
           </Link>
           <span className="text-text-muted/40">/</span>
-          <span className="font-serif text-lg text-amber">{figure.name}</span>
+          <span className="font-serif text-lg text-amber">{displayName}</span>
           <div className="flex-1" />
           <Link href="/figure/su-shi" className="text-sm text-text-secondary hover:text-cyan-tech transition-colors">
             人物画像
@@ -692,21 +748,21 @@ export default function FigurePage() {
                 {/* Avatar - square classical frame */}
                 <div className="relative w-28 h-28 rounded-lg bg-bg-card border-2 border-amber/30 flex items-center justify-center shadow-xl shadow-amber/5">
                   <div className="absolute inset-1 border border-amber/10 rounded" />
-                  <span className="font-serif text-5xl text-amber">{figure.name[0]}</span>
+                  <span className="font-serif text-5xl text-amber">{displayName[0]}</span>
                 </div>
 
                 <div>
                   <div className="flex items-center gap-3 mb-2">
-                    <h1 className="font-serif text-4xl font-bold text-text-primary">{figure.name}</h1>
+                    <h1 className="font-serif text-4xl font-bold text-text-primary">{displayName}</h1>
                     <span className="text-xs px-3 py-1 rounded-full bg-amber/15 text-amber border border-amber/20">
-                      {figure.dynasty}
+                      {displayDynasty}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 text-text-secondary text-sm mb-3">
                     {figure.courtesyName && <span>字{figure.courtesyName}</span>}
                     {figure.pseudonym && <span>号{figure.pseudonym}</span>}
                     <span className="text-text-muted">·</span>
-                    <span className="font-mono">{figure.birthYear}—{figure.deathYear}</span>
+                    <span className="font-mono">{displayBirthYear}—{displayDeathYear}</span>
                   </div>
                   <div className="flex gap-2">
                     {figure.identity.map((id) => (
@@ -754,7 +810,7 @@ export default function FigurePage() {
             <div className="lg:col-span-1">
               <div className="bg-bg-card/60 border border-border-subtle rounded-xl p-6">
                 <h3 className="font-serif text-xl font-semibold text-text-primary mb-4">人物简介</h3>
-                <p className="text-text-secondary text-sm leading-relaxed">{figure.bio}</p>
+                <p className="text-text-secondary text-sm leading-relaxed">{displayBio}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {figure.tags.map((tag) => (
                     <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-amber/10 text-amber">
@@ -799,14 +855,14 @@ export default function FigurePage() {
         {activeTab === 'network' && (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-3">
-              <RelationshipGraph relations={figureRelations} centerName={figure.name} />
+              <RelationshipGraph relations={figureRelations} centerName={displayName} />
             </div>
             <div className="lg:col-span-1">
               <div className="bg-bg-card/60 border border-border-subtle rounded-xl p-6">
                 <h3 className="font-serif text-lg font-semibold text-text-primary mb-4">关系详情</h3>
                 <div className="space-y-3">
                   {figureRelations.map((rel, i) => {
-                    const otherName = rel.source === figure.name ? rel.target : rel.source;
+                    const otherName = rel.source === displayName ? rel.target : rel.source;
                     const typeColors: Record<string, string> = {
                       师友: '#06b6d4',
                       亲属: '#10b981',
@@ -875,6 +931,18 @@ export default function FigurePage() {
                 })}
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'crossera' && (
+          <div>
+            {crossEraConnections.length > 0 ? (
+              <CrossEraCard connections={crossEraConnections} figureName={displayName} />
+            ) : (
+              <div className="bg-bg-card/60 border border-border-subtle rounded-xl p-12 text-center">
+                <p className="text-text-muted">暂无跨时代连接数据（需 CBDB + 上图 SPARQL 同时返回结果）</p>
+              </div>
+            )}
           </div>
         )}
 

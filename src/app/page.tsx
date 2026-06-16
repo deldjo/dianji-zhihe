@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { dynasties, figures, searchSuggestions } from '@/lib/mock-data';
 import Footer from '@/components/Footer';
+import type { UnifiedResult } from './api/unified/route';
 
 // Canvas particle network background
 function NetworkBackground() {
@@ -96,11 +97,36 @@ export default function HomePage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedDynasty, setSelectedDynasty] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [apiSearchResults, setApiSearchResults] = useState<UnifiedResult[]>([]);
   const searchRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // 调用统一检索 API（防抖 400ms）
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setApiSearchResults([]);
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/unified?q=${encodeURIComponent(searchQuery)}&limit=8`);
+        const json = await res.json();
+        if (json.success && json.data) {
+          setApiSearchResults(json.data);
+        }
+      } catch {
+        // 静默失败
+      }
+    }, 400);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -230,19 +256,65 @@ export default function HomePage() {
             </div>
 
             {/* Suggestions dropdown */}
-            {showSuggestions && searchQuery && filteredSuggestions.length > 0 && (
+            {showSuggestions && searchQuery && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-bg-card/95 backdrop-blur-md border border-border-subtle rounded-xl overflow-hidden shadow-2xl z-50">
-                {filteredSuggestions.slice(0, 6).map((s) => (
-                  <Link
-                    key={s.id}
-                    href={`/figure/${s.id}`}
-                    className="flex items-center gap-4 px-6 py-3 hover:bg-bg-card-hover transition-colors"
-                    onClick={() => setShowSuggestions(false)}
-                  >
-                    <span className="text-amber font-serif text-lg">{s.name}</span>
-                    <span className="text-text-muted text-sm">{s.dynasty} · {s.identity}</span>
-                  </Link>
-                ))}
+                {/* API 真实结果优先 */}
+                {apiSearchResults.length > 0 && (
+                  <>
+                    <div className="px-4 py-2 text-xs text-text-muted border-b border-border-subtle">
+                      🔍 真实数据（CBDB + 上图）
+                    </div>
+                    {apiSearchResults.slice(0, 6).map((r, i) => {
+                      const figureId = r.type === 'person'
+                        ? (r.source === 'cbdb' ? `cbdb-${r.name}` : `shlib-p-${r.name}`)
+                        : null;
+                      return figureId ? (
+                        <Link
+                          key={`api-${i}`}
+                          href={`/figure/${encodeURIComponent(figureId)}`}
+                          className="flex items-center gap-4 px-6 py-3 hover:bg-bg-card-hover transition-colors border-b border-border-subtle/30"
+                          onClick={() => { setShowSuggestions(false); setApiSearchResults([]); }}
+                        >
+                          <span className="text-cyan-tech font-serif text-lg">{r.name}</span>
+                          <span className="text-text-muted text-xs">
+                            {r.type === 'person' ? (
+                              <>
+                                {r.dynasty || ''} {r.birthYear ? `${r.birthYear}—${r.deathYear || '?'}` : ''}
+                                <span className="ml-1 text-amber/60">· {r.source === 'cbdb' ? 'CBDB哈佛' : '上图人物'}</span>
+                              </>
+                            ) : (
+                              <>{r.author || ''} · {r.category || ''}</>
+                            )}
+                          </span>
+                        </Link>
+                      ) : null;
+                    })}
+                  </>
+                )}
+                {/* Mock 兜底结果 */}
+                {filteredSuggestions.length > 0 && (
+                  <>
+                    <div className="px-4 py-2 text-xs text-text-muted border-b border-border-subtle">
+                      {apiSearchResults.length > 0 ? '📚 示例人物（可体验完整功能）' : '示例人物'}
+                    </div>
+                    {filteredSuggestions.slice(0, 6 - Math.min(apiSearchResults.length, 6)).map((s) => (
+                      <Link
+                        key={s.id}
+                        href={`/figure/${s.id}`}
+                        className="flex items-center gap-4 px-6 py-3 hover:bg-bg-card-hover transition-colors"
+                        onClick={() => setShowSuggestions(false)}
+                      >
+                        <span className="text-amber font-serif text-lg">{s.name}</span>
+                        <span className="text-text-muted text-sm">{s.dynasty} · {s.identity}</span>
+                      </Link>
+                    ))}
+                  </>
+                )}
+                {apiSearchResults.length === 0 && filteredSuggestions.length === 0 && (
+                  <div className="px-6 py-8 text-center text-text-muted text-sm">
+                    正在检索 CBDB + 上图数据库...
+                  </div>
+                )}
               </div>
             )}
           </div>
