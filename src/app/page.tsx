@@ -1,12 +1,10 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
-import Image from 'next/image';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { dynasties, figures, searchSuggestions } from '@/lib/mock-data';
 import Footer from '@/components/Footer';
 
-// Canvas particle network background
 function NetworkBackground() {
   const canvasRef = useRef(null);
   useEffect(() => {
@@ -16,35 +14,27 @@ function NetworkBackground() {
     if (!ctx) return;
     let animationId: number;
     let particles: { x: number; y: number; vx: number; vy: number; r: number; opacity: number; twinkle: number; twinkleSpeed: number; hue: number }[] = [];
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
+    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
     resize();
     window.addEventListener('resize', resize);
     const count = Math.min(140, Math.floor((canvas.width * canvas.height) / 11000));
-    const palette: { rgb: string }[] = [
+    const palette = [
       { rgb: '6, 182, 212' }, { rgb: '6, 182, 212' }, { rgb: '6, 182, 212' },
       { rgb: '217, 119, 6' }, { rgb: '139, 92, 246' }, { rgb: '236, 72, 153' },
     ];
     for (let i = 0; i < count; i++) {
       particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.35,
-        vy: (Math.random() - 0.5) * 0.35,
-        r: Math.random() * 2.5 + 1.8,
-        opacity: Math.random() * 0.45 + 0.55,
-        twinkle: Math.random() * Math.PI * 2,
-        twinkleSpeed: 0.015 + Math.random() * 0.025,
+        x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.35, vy: (Math.random() - 0.5) * 0.35,
+        r: Math.random() * 2.5 + 1.8, opacity: Math.random() * 0.45 + 0.55,
+        twinkle: Math.random() * Math.PI * 2, twinkleSpeed: 0.015 + Math.random() * 0.025,
         hue: Math.floor(Math.random() * palette.length),
       });
     }
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (const p of particles) {
-        p.x += p.vx;
-        p.y += p.vy;
+        p.x += p.vx; p.y += p.vy;
         if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
         if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
         p.twinkle += p.twinkleSpeed;
@@ -57,129 +47,75 @@ function NetworkBackground() {
         grad.addColorStop(0.4, `rgba(${rgb}, ${opacity * 0.15})`);
         grad.addColorStop(1, `rgba(${rgb}, 0)`);
         ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, glowRadius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${rgb}, ${Math.min(1, opacity * 1.2)})`;
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r * 0.4, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.8})`;
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, glowRadius, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${rgb}, ${Math.min(1, opacity * 1.2)})`; ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.8})`; ctx.fill();
       }
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
+          const dx = particles[i].x - particles[j].x, dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < 170) {
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.beginPath(); ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
-            const alpha = (1 - dist / 170) * 0.28;
-            ctx.strokeStyle = `rgba(6, 182, 212, ${alpha})`;
-            ctx.lineWidth = 0.8;
-            ctx.stroke();
+            ctx.strokeStyle = `rgba(6, 182, 212, ${(1 - dist / 170) * 0.28})`;
+            ctx.lineWidth = 0.8; ctx.stroke();
           }
         }
       }
       animationId = requestAnimationFrame(draw);
     };
     draw();
-    return () => {
-      cancelAnimationFrame(animationId);
-      window.removeEventListener('resize', resize);
-    };
+    return () => { cancelAnimationFrame(animationId); window.removeEventListener('resize', resize); };
   }, []);
   return <canvas ref={canvasRef} className="fixed inset-0 -z-10" />;
-}
-
-// 提取 CBDB 人物 ID
-function extractPersonId(data: any): string | null {
-  if (!data) return null;
-  // CBDB 返回数组或对象
-  const item = Array.isArray(data) ? data[0] : data;
-  if (!item) return null;
-  const pid = item.c_personid || item.id;
-  return pid ? `cbdb-${pid}` : null;
 }
 
 export default function HomePage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedDynasty, setSelectedDynasty] = useState(null);
+  const [selectedDynasty, setSelectedDynasty] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
-  // 🔧 CBDB 直调新增 states
+  const searchRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [apiSearchResults, setApiSearchResults] = useState<any[]>([]);
   const [isLoadingApi, setIsLoadingApi] = useState(false);
-  const searchRef = useRef(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
-
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false);
-      }
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowSuggestions(false);
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // 🔧 CBDB 前端直调搜索（450ms 防抖，5s 超时）
-  const fetchCbdbData = useCallback(async (name: string) => {
-    if (!name.trim()) {
-      setApiSearchResults([]);
-      return;
-    }
-    setIsLoadingApi(true);
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const url = `https://cbdb.fas.harvard.edu/cbdbapi/person.php?name=${encodeURIComponent(name)}&output=json`;
-      const res = await fetch(url, {
-        headers: { 'User-Agent': 'Ancient-Wisdom-App/1.0' },
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (res.ok) {
-        const text = await res.text();
-        try {
-          const json = JSON.parse(text);
-          if (json && json.c_personid) {
-            setApiSearchResults([json]);
-          } else {
-            setApiSearchResults([]);
-          }
-        } catch {
-          setApiSearchResults([]);
-        }
-      } else {
-        setApiSearchResults([]);
-      }
-    } catch {
-      setApiSearchResults([]);
-    } finally {
-      setIsLoadingApi(false);
-    }
   }, []);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearchQuery(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchCbdbData(val), 450);
-  };
-
-  // CBDB 结果点击 → 跳转人物详情
-  const handleApiResultClick = (person: any) => {
-    setShowSuggestions(false);
-    const name = person.c_name_chn || searchQuery;
-    router.push(`/figure/cbdb-${encodeURIComponent(name)}`);
+    if (!val.trim()) { setApiSearchResults([]); return; }
+    setIsLoadingApi(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const url = `https://cbdb.fas.harvard.edu/cbdbapi/person.php?name=${encodeURIComponent(val)}&output=json`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'Ancient-Wisdom-App/1.0' }, signal: controller.signal as any });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const text = await res.text();
+          try {
+            const json = JSON.parse(text);
+            setApiSearchResults(json && json.c_personid ? [json] : []);
+          } catch { setApiSearchResults([]); }
+        } else { setApiSearchResults([]); }
+      } catch { setApiSearchResults([]); }
+      finally { setIsLoadingApi(false); }
+    }, 450);
   };
 
   const filteredSuggestions = searchSuggestions.filter((s) => {
@@ -197,43 +133,29 @@ export default function HomePage() {
     return matchesDynasty;
   });
 
-  const dynastyNameMap: Record<string, string> = {
-    tang: '唐', song: '宋', yuan: '元', ming: '明', qing: '清',
-  };
+  const dynastyNameMap: Record<string, string> = { tang: '唐', song: '宋', yuan: '元', ming: '明', qing: '清' };
 
-  // 合并展示：CBDB 结果优先显示
   const displayResults = apiSearchResults.length > 0
-    ? apiSearchResults.map(p => ({
-        type: 'cbdb' as const,
-        person: p,
-        name: p.c_name_chn,
-        label: 'CBDB哈佛',
-        sublabel: `${p.c_dynasty_chn || ''} · ${p.c_birthyear || '?'}-${p.c_deathyear || '?'}`,
-      }))
-    : filteredSuggestions.slice(0, 6).map(s => ({
-        type: 'mock' as const,
-        name: s.name,
-        label: s.dynasty,
-        sublabel: s.identity,
-      }));
+    ? apiSearchResults.map((p) => ({ type: 'cbdb' as const, person: p, name: p.c_name_chn, label: 'CBDB哈佛', sublabel: `${p.c_dynasty_chn || ''} · ${p.c_birthyear || '?'}-${p.c_deathyear || '?'}` }))
+    : filteredSuggestions.slice(0, 6).map((s) => ({ type: 'mock' as const, name: s.name, label: s.dynasty, sublabel: s.identity }));
+
+  const handleResultClick = (item: typeof displayResults[0]) => {
+    setShowSuggestions(false);
+    if (item.type === 'cbdb') router.push(`/figure/cbdb-${encodeURIComponent(item.person.c_name_chn || searchQuery)}`);
+    else router.push(`/figure/${item.name}`);
+  };
 
   return (
     <div className="min-h-screen relative overflow-hidden">
       <NetworkBackground />
-
-      {/* Top nav bar */}
       <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-8 py-4 bg-bg-dark/80 backdrop-blur-md border-b border-border-subtle">
         <div className="flex items-center gap-3">
           <span className="text-2xl font-serif font-bold text-cyan-tech">典籍智核</span>
           <span className="text-text-muted text-sm">文脉探微 · 人物画像 · 智能问答</span>
         </div>
       </nav>
-
-      {/* Main content */}
       <main className="relative z-10 pt-24 pb-16 px-6">
-        {/* Hero section */}
         <div className="max-w-6xl mx-auto text-center mb-16">
-          {/* Logo */}
           <div className="relative inline-block mb-8">
             <div className="w-28 h-28 rounded-full bg-gradient-to-br from-cyan-tech/30 to-purple-accent/30 flex items-center justify-center shadow-2xl shadow-cyan-tech/20 backdrop-blur-sm border border-cyan-tech/40">
               <svg viewBox="0 0 100 100" className="w-16 h-16">
@@ -249,14 +171,10 @@ export default function HomePage() {
                 <text x="50" y="82" textAnchor="middle" fontSize="18" fill="url(#logoGrad)" fontFamily="serif">智</text>
               </svg>
             </div>
-            {/* Glow ring behind logo */}
             <div className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-cyan-tech/40 via-purple-accent/40 to-pink-primary/40 blur-2xl opacity-60 animate-pulse" />
           </div>
-
           <h1 className="text-5xl font-serif font-bold mb-4">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-tech via-purple-accent to-pink-primary">
-              典籍智核
-            </span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-tech via-purple-accent to-pink-primary">典籍智核</span>
             <span className="text-text-primary ml-4">文脉探微</span>
           </h1>
           <p className="text-xl text-text-muted mb-12 max-w-2xl mx-auto">
@@ -271,10 +189,7 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input
-                type="text"
-                value={searchQuery}
-                onChange={handleSearchChange}
-                onFocus={() => setShowSuggestions(true)}
+                type="text" value={searchQuery} onChange={handleSearchChange} onFocus={() => setShowSuggestions(true)}
                 placeholder="搜索历史人物，如：苏轼、李白、杜甫..."
                 className="w-full px-6 py-4 pl-14 bg-bg-card/90 backdrop-blur-sm border border-border-subtle rounded-xl text-text-primary placeholder:text-text-secondary/50 text-lg focus:outline-none focus:border-cyan-tech transition-colors"
               />
@@ -284,34 +199,15 @@ export default function HomePage() {
                 </div>
               )}
             </div>
-
-            {/* Suggestions dropdown */}
             {showSuggestions && searchQuery && displayResults.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-bg-card/95 backdrop-blur-md border border-border-subtle rounded-xl shadow-2xl overflow-hidden z-50">
                 {displayResults.map((item, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => {
-                      setShowSuggestions(false);
-                      if (item.type === 'cbdb') {
-                        handleApiResultClick(item.person);
-                      } else {
-                        router.push(`/figure/${item.name}`);
-                      }
-                    }}
-                    className="flex items-center gap-3 px-5 py-3.5 hover:bg-bg-warm/50 cursor-pointer transition-colors border-b border-border-subtle last:border-0"
-                  >
-                    <div className={`flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
-                      item.type === 'cbdb'
-                        ? 'bg-cyan-tech/20 text-cyan-tech border border-cyan-tech/30'
-                        : 'bg-purple-accent/20 text-purple-accent border border-purple-accent/30'
-                    }`}>
+                  <div key={idx} onClick={() => handleResultClick(item)}
+                    className="flex items-center gap-3 px-5 py-3.5 hover:bg-bg-warm/50 cursor-pointer transition-colors border-b border-border-subtle last:border-0">
+                    <div className={`flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium ${item.type === 'cbdb' ? 'bg-cyan-tech/20 text-cyan-tech border border-cyan-tech/30' : 'bg-purple-accent/20 text-purple-accent border border-purple-accent/30'}`}>
                       {item.label}
                     </div>
-                    <div>
-                      <div className="text-text-primary font-medium">{item.name}</div>
-                      <div className="text-text-muted text-sm">{item.sublabel}</div>
-                    </div>
+                    <div><div className="text-text-primary font-medium">{item.name}</div><div className="text-text-muted text-sm">{item.sublabel}</div></div>
                   </div>
                 ))}
               </div>
@@ -321,18 +217,9 @@ export default function HomePage() {
           {/* Dynasty filters */}
           <div className="flex flex-wrap justify-center gap-3 mb-16">
             {dynasties.map((d) => (
-              <button
-                key={d.id}
-                onClick={() => setSelectedDynasty(selectedDynasty === d.id ? null : d.id)}
-                className={`relative px-6 py-2.5 rounded-lg font-serif text-lg font-semibold transition-all duration-300 ${
-                  selectedDynasty === d.id
-                    ? 'bg-amber/25 text-amber border-amber border shadow-lg shadow-amber/20'
-                    : 'bg-bg-card/70 text-text-primary border border-border-subtle hover:border-cyan-tech/60 hover:text-cyan-tech hover:shadow-lg hover:shadow-cyan-tech/10'
-                }`}
-              >
-                {selectedDynasty === d.id && (
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber rounded-full animate-pulse" />
-                )}
+              <button key={d.id} onClick={() => setSelectedDynasty(selectedDynasty === d.id ? null : d.id)}
+                className={`relative px-6 py-2.5 rounded-lg font-serif text-lg font-semibold transition-all duration-300 ${selectedDynasty === d.id ? 'bg-amber/25 text-amber border-amber border shadow-lg shadow-amber/20' : 'bg-bg-card/70 text-text-primary border border-border-subtle hover:border-cyan-tech/60 hover:text-cyan-tech hover:shadow-lg hover:shadow-cyan-tech/10'}`}>
+                {selectedDynasty === d.id && <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber rounded-full animate-pulse" />}
                 {d.name} {d.period}
               </button>
             ))}
@@ -369,22 +256,13 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Featured figures */}
           {selectedDynasty && (
             <div className="bg-bg-card/70 backdrop-blur-sm border border-border-subtle rounded-xl p-8">
-              <h3 className="text-2xl font-serif font-bold text-text-primary mb-6">
-                {dynastyNameMap[selectedDynasty]}代人物
-              </h3>
+              <h3 className="text-2xl font-serif font-bold text-text-primary mb-6">{dynastyNameMap[selectedDynasty]}代人物</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {filteredFigures.map((f) => (
-                  <Link
-                    key={f.name}
-                    href={`/figure/${f.name}`}
-                    className="group bg-bg-warm/50 border border-border-subtle rounded-lg p-4 hover:border-cyan-tech/50 transition-all"
-                  >
-                    <div className="text-4xl font-serif mb-2 group-hover:scale-110 transition-transform">
-                      {f.name[0]}
-                    </div>
+                  <Link key={f.name} href={`/figure/${f.name}`} className="group bg-bg-warm/50 border border-border-subtle rounded-lg p-4 hover:border-cyan-tech/50 transition-all">
+                    <div className="text-4xl font-serif mb-2 group-hover:scale-110 transition-transform">{f.name[0]}</div>
                     <div className="text-text-primary font-medium">{f.name}</div>
                     <div className="text-text-muted text-sm">{f.identity[0]}</div>
                   </Link>
@@ -394,7 +272,6 @@ export default function HomePage() {
           )}
         </div>
       </main>
-
       <Footer />
     </div>
   );
